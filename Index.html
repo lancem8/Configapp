@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-100 dark:bg-slate-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trolley Configuration Builder (Spreadsheet)</title>
+    <script src="https://cdn-tailwindcss.vercel.app/"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        html, body { font-family: 'Inter', sans-serif; }
+        .table-input, .table-select { @apply w-full p-2 border border-slate-300 rounded-md bg-white dark:bg-slate-700 dark:border-slate-500 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent; }
+        .modal-input { @apply w-full p-2 border border-slate-300 rounded-md bg-white dark:bg-slate-600 dark:border-slate-500 dark:text-white; }
+    </style>
+</head>
+<body class="text-slate-800 dark:text-slate-200">
+
+    <div class="container mx-auto max-w-5xl p-4 lg:p-8">
+        <header class="text-center mb-6">
+            <h1 class="text-4xl font-bold text-slate-800 dark:text-white">Trolley Configuration Builder</h1>
+            <p class="text-slate-600 dark:text-slate-400 mt-2 max-w-3xl mx-auto">Use this spreadsheet-style editor to build your trolley. When finished, export the JSON file and import it into the main Trolley Restock app.</p>
+        </header>
+
+        <div class="flex justify-between items-center mb-4">
+            <div class="space-x-2">
+                <button id="manage-drawers-btn" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded-lg">Manage Drawers</button>
+                <button id="manage-locations-btn" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded-lg">Manage Locations</button>
+            </div>
+            <button id="export-btn" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg">Export JSON File</button>
+        </div>
+
+        <main id="config-builder" class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-xl overflow-x-auto">
+            <table class="w-full border-collapse">
+                <thead>
+                    <tr class="border-b-2 border-slate-300 dark:border-slate-600">
+                        <th class="p-3 text-left font-bold w-1/4">Drawer</th>
+                        <th class="p-3 text-left font-bold w-2/4">Item Name</th>
+                        <th class="p-3 text-left font-bold">Required</th>
+                        <th class="p-3 text-left font-bold">Pack Size</th>
+                        <th class="p-3 text-left font-bold w-1/4">Location</th>
+                        <th class="p-3 text-left font-bold"></th>
+                    </tr>
+                </thead>
+                <tbody id="items-table-body">
+                    <!-- Rows will be rendered here by JavaScript -->
+                </tbody>
+            </table>
+        </main>
+
+        <footer class="mt-4">
+            <button id="add-item-btn" class="w-full p-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg">+ Add New Item</button>
+        </footer>
+    </div>
+    
+    <!-- Location Manager Modal -->
+    <div id="locations-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden justify-center items-center p-4">
+        <div class="bg-white dark:bg-slate-800 w-full max-w-md rounded-lg shadow-2xl flex flex-col">
+            <header class="flex items-center justify-between p-4 border-b dark:border-slate-600"><h2 class="text-2xl font-bold">Manage Locations</h2><button data-close-modal="locations-modal" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button></header>
+            <div id="locations-editor" class="p-4 space-y-2 max-h-96 overflow-y-auto"></div>
+            <div class="p-4 border-t dark:border-slate-600 flex items-center space-x-2"><input type="text" id="new-location-input" class="modal-input flex-grow" placeholder="New location name..."><button id="add-location-btn" class="p-2 bg-teal-500 text-white rounded-md">Add</button></div>
+        </div>
+    </div>
+
+    <!-- Drawer Manager Modal -->
+    <div id="drawers-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden justify-center items-center p-4">
+        <div class="bg-white dark:bg-slate-800 w-full max-w-md rounded-lg shadow-2xl flex flex-col">
+            <header class="flex items-center justify-between p-4 border-b dark:border-slate-600"><h2 class="text-2xl font-bold">Manage Drawers</h2><button data-close-modal="drawers-modal" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button></header>
+            <div id="drawers-editor" class="p-4 space-y-2 max-h-96 overflow-y-auto"></div>
+            <div class="p-4 border-t dark:border-slate-600 flex items-center space-x-2"><input type="text" id="new-drawer-input" class="modal-input flex-grow" placeholder="New drawer name..."><button id="add-drawer-btn" class="p-2 bg-teal-500 text-white rounded-md">Add</button></div>
+        </div>
+    </div>
+
+    <script>
+        // --- INITIAL DATA & STATE ---
+        let flatItems = [
+            { drawer: "Drawer 1: Airway", name: "Laryngoscope Blade (Sz 3)", required: 2, packSize: 1, location: "Clean Utility" },
+            { drawer: "Drawer 1: Airway", name: "Endotracheal Tube (Sz 7.0)", required: 3, packSize: 1, location: "Clean Utility" },
+            { drawer: "Drawer 2: IV Access", name: "IV Cannula (20G)", required: 10, packSize: 1, location: "Stores" }
+        ];
+        let locations = ["Clean Utility", "Stores", "Pharmacy"];
+        let drawers = ["Drawer 1: Airway", "Drawer 2: IV Access"];
+
+        // --- DOM ELEMENTS ---
+        const itemsTableBody = document.getElementById('items-table-body');
+        const locationsModal = document.getElementById('locations-modal');
+        const locationsEditor = document.getElementById('locations-editor');
+        const drawersModal = document.getElementById('drawers-modal');
+        const drawersEditor = document.getElementById('drawers-editor');
+
+        // --- RENDER FUNCTIONS ---
+        function renderAll() {
+            renderTable();
+            renderLocationsEditor();
+            renderDrawersEditor();
+        }
+
+        function renderTable() {
+            itemsTableBody.innerHTML = '';
+            const locationOptions = locations.map(loc => `<option value="${loc}">${loc}</option>`).join('');
+            const drawerOptions = drawers.map(drw => `<option value="${drw}">${drw}</option>`).join('');
+            flatItems.forEach((item, index) => {
+                const row = document.createElement('tr');
+                row.className = 'border-b border-slate-200 dark:border-slate-700';
+                row.dataset.index = index;
+                row.innerHTML = `
+                    <td class="p-2"><select class="table-select" data-field="drawer">${drawerOptions}</select></td>
+                    <td class="p-2"><input type="text" class="table-input" data-field="name" value="${item.name}"></td>
+                    <td class="p-2"><input type="number" class="table-input" data-field="required" value="${item.required}" min="1"></td>
+                    <td class="p-2"><input type="number" class="table-input" data-field="packSize" value="${item.packSize || 1}" min="1"></td>
+                    <td class="p-2"><select class="table-select" data-field="location">${locationOptions}</select></td>
+                    <td class="p-2 text-center"><button class="delete-item-btn p-2 text-rose-500 hover:text-rose-700" title="Delete Item">&times;</button></td>
+                `;
+                row.querySelector('select[data-field="location"]').value = item.location;
+                row.querySelector('select[data-field="drawer"]').value = item.drawer;
+                itemsTableBody.appendChild(row);
+            });
+        }
+        
+        function renderLocationsEditor() {
+            locationsEditor.innerHTML = '';
+            locations.forEach((loc, index) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center space-x-2';
+                div.innerHTML = `<input type="text" class="modal-input flex-grow" value="${loc}" data-location-index="${index}"><button class="delete-location-btn p-2 bg-rose-600 text-white rounded-md" data-location-index="${index}">X</button>`;
+                locationsEditor.appendChild(div);
+            });
+        }
+
+        function renderDrawersEditor() {
+            drawersEditor.innerHTML = '';
+            drawers.forEach((drw, index) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center space-x-2';
+                div.innerHTML = `<input type="text" class="modal-input flex-grow" value="${drw}" data-drawer-index="${index}"><button class="delete-drawer-btn p-2 bg-rose-600 text-white rounded-md" data-drawer-index="${index}">X</button>`;
+                drawersEditor.appendChild(div);
+            });
+        }
+
+        // --- EVENT HANDLERS ---
+        document.getElementById('add-item-btn').addEventListener('click', () => {
+            flatItems.push({
+                drawer: drawers[0] || "Default Drawer",
+                name: "New Item",
+                required: 1,
+                packSize: 1,
+                location: locations[0] || ""
+            });
+            renderTable();
+        });
+
+        itemsTableBody.addEventListener('change', e => {
+            const target = e.target;
+            if (target.matches('.table-input, .table-select')) {
+                const index = parseInt(target.closest('tr').dataset.index);
+                const field = target.dataset.field;
+                const value = (target.type === 'number') ? parseInt(target.value) || 1 : target.value;
+                flatItems[index][field] = value;
+            }
+        });
+
+        itemsTableBody.addEventListener('click', e => {
+            if (e.target.matches('.delete-item-btn')) {
+                if (confirm("Delete this item?")) {
+                    const index = parseInt(e.target.closest('tr').dataset.index);
+                    flatItems.splice(index, 1);
+                    renderTable();
+                }
+            }
+        });
+
+        // Modal Open/Close Logic
+        document.getElementById('manage-locations-btn').addEventListener('click', () => locationsModal.classList.remove('hidden'));
+        document.getElementById('manage-drawers-btn').addEventListener('click', () => drawersModal.classList.remove('hidden'));
+        document.querySelectorAll('[data-close-modal]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.getElementById(btn.dataset.closeModal).classList.add('hidden');
+            });
+        });
+        
+        // Location Modal Logic
+        locationsModal.addEventListener('click', e => {
+            if (e.target.id === 'add-location-btn') {
+                const input = document.getElementById('new-location-input');
+                if (input.value.trim() && !locations.includes(input.value.trim())) {
+                    locations.push(input.value.trim());
+                    renderAll();
+                }
+                input.value = "";
+            } else if (e.target.matches('.delete-location-btn')) {
+                const index = parseInt(e.target.dataset.locationIndex);
+                if (confirm(`Delete location "${locations[index]}"?`)) {
+                    locations.splice(index, 1);
+                    renderAll();
+                }
+            }
+        });
+        locationsModal.addEventListener('change', e => {
+            if (e.target.matches('.modal-input')) {
+                const index = parseInt(e.target.dataset.locationIndex);
+                locations[index] = e.target.value;
+                renderTable();
+            }
+        });
+        
+        // Drawer Modal Logic
+        drawersModal.addEventListener('click', e => {
+            if (e.target.id === 'add-drawer-btn') {
+                const input = document.getElementById('new-drawer-input');
+                if (input.value.trim() && !drawers.includes(input.value.trim())) {
+                    drawers.push(input.value.trim());
+                    renderAll();
+                }
+                input.value = "";
+            } else if (e.target.matches('.delete-drawer-btn')) {
+                const index = parseInt(e.target.dataset.drawerIndex);
+                if (confirm(`Delete drawer "${drawers[index]}"? This will not delete items in it.`)) {
+                    drawers.splice(index, 1);
+                    renderAll();
+                }
+            }
+        });
+        drawersModal.addEventListener('change', e => {
+            if (e.target.matches('.modal-input')) {
+                const index = parseInt(e.target.dataset.drawerIndex);
+                const oldName = drawers[index];
+                const newName = e.target.value;
+                drawers[index] = newName;
+                // Update items that used the old drawer name
+                flatItems.forEach(item => {
+                    if (item.drawer === oldName) {
+                        item.drawer = newName;
+                    }
+                });
+                renderTable();
+            }
+        });
+
+        document.getElementById('export-btn').addEventListener('click', () => {
+            const trolleyData = [];
+            const drawerMap = new Map();
+
+            flatItems.forEach(item => {
+                if (!drawerMap.has(item.drawer)) {
+                    drawerMap.set(item.drawer, []);
+                }
+                drawerMap.get(item.drawer).push({
+                    name: item.name,
+                    required: item.required,
+                    packSize: item.packSize,
+                    location: item.location,
+                    current: 0
+                });
+            });
+
+            for (const [drawerName, items] of drawerMap.entries()) {
+                trolleyData.push({ drawerName, items });
+            }
+            
+            const dataToExport = { trolleyData, locations };
+            
+            const jsonString = JSON.stringify(dataToExport, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `trolley-backup.json`;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }, 100);
+        });
+
+        // --- INITIALIZATION ---
+        renderAll();
+    </script>
+</body>
+</html>
